@@ -1,65 +1,140 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useEffect } from "react";
+import SplashScreen from "@/components/SplashScreen";
+import Header from "@/components/Header";
+import BottomNav from "@/components/BottomNav";
+import FarmSetup from "@/components/FarmSetup";
+import WeatherDashboard from "@/components/WeatherDashboard";
+import CropRecommender from "@/components/CropRecommender";
+import { SoilType, getRecommendedCrops, Crop, WeatherData } from "@/data/mockData";
+import { TRANSLATIONS, Language } from "@/data/translations";
+import { getCurrentWeather, getForecast, formatForecastData, mapWeatherCondition } from "@/services/weatherService";
 
 export default function Home() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [location, setLocation] = useState("");
+  const [soilType, setSoilType] = useState<SoilType>("Loamy");
+  const [recommendedCrops, setRecommendedCrops] = useState<Crop[]>([]);
+  const [weatherData, setWeatherData] = useState<WeatherData[]>([]);
+  const [isLoadingWeather, setIsLoadingWeather] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<'home' | 'weather' | 'crops'>('home');
+  const [language, setLanguage] = useState<Language>('en');
+
+  const t = TRANSLATIONS[language];
+
+  // Update recommendations when soil type changes
+  useEffect(() => {
+    const crops = getRecommendedCrops(soilType);
+    setRecommendedCrops(crops);
+  }, [soilType]);
+
+  // Fetch weather data when location changes
+  useEffect(() => {
+    if (location && location.trim()) {
+      fetchWeatherData(location);
+    }
+  }, [location]);
+
+  const fetchWeatherData = async (city: string) => {
+    setIsLoadingWeather(true);
+    setWeatherError(null);
+
+    try {
+      // Fetch current weather and forecast
+      const [currentResult, forecastResult] = await Promise.all([
+        getCurrentWeather(city),
+        getForecast(city),
+      ]);
+
+      if (!currentResult.success || !currentResult.data) {
+        setWeatherError(t.invalidLocation);
+        setIsLoadingWeather(false);
+        return;
+      }
+
+      if (!forecastResult.success || !forecastResult.data) {
+        setWeatherError(t.weatherError);
+        setIsLoadingWeather(false);
+        return;
+      }
+
+      // Format current weather
+      const current = currentResult.data;
+      const currentWeather: WeatherData = {
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        temp: Math.round(current.main.temp),
+        humidity: current.main.humidity,
+        condition: mapWeatherCondition(current.weather[0].main),
+        rainfallChance: current.weather[0].main.toLowerCase().includes('rain') ? 70 : 20,
+      };
+
+      // Format forecast
+      const forecast = formatForecastData(forecastResult.data);
+
+      // Combine current + forecast
+      setWeatherData([currentWeather, ...forecast]);
+      setIsLoadingWeather(false);
+    } catch (error) {
+      console.error('Error fetching weather:', error);
+      setWeatherError(t.weatherError);
+      setIsLoadingWeather(false);
+    }
+  };
+
+  const handleEnter = () => {
+    if (location && location.trim()) {
+      setActiveTab('weather');
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <>
+      {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      <Header language={language} setLanguage={setLanguage} title={t.appTitle} />
+      <div className="container mx-auto p-4 space-y-8 pb-24">
+
+        {/* Tab Content */}
+        {activeTab === 'home' && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="text-center py-4">
+              <h2 className="text-2xl font-bold text-primary">{t.welcomeTitle}</h2>
+              <p className="text-muted-foreground">{t.welcomeSubtitle}</p>
+            </div>
+            <FarmSetup
+              location={location}
+              setLocation={setLocation}
+              soilType={soilType}
+              setSoilType={setSoilType}
+              onEnter={handleEnter}
+              language={language}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          </div>
+        )}
+
+        {activeTab === 'weather' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <WeatherDashboard
+              location={location}
+              weatherData={weatherData}
+              language={language}
+              isLoading={isLoadingWeather}
+              error={weatherError}
+            />
+          </div>
+        )}
+
+        {activeTab === 'crops' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <CropRecommender crops={recommendedCrops} language={language} />
+          </div>
+        )}
+
+      </div>
+
+      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} language={language} />
+    </>
   );
 }
